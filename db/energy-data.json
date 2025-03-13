@@ -1,0 +1,28 @@
+{
+  "listings": [
+    {
+      "id": 1,
+      "seller": "Green Energy Corp",
+      "location": "New York",
+      "price": "1000000000000000000",  // 1 ETH in Wei
+      "amount": 100,
+      "timestamp": "2024-03-20T10:00:00Z"
+    },
+    {
+      "id": 2,
+      "seller": "Solar Power Ltd",
+      "location": "California",
+      "price": "500000000000000000",   // 0.5 ETH in Wei
+      "amount": 50,
+      "timestamp": "2024-03-20T11:00:00Z"
+    },
+    {
+      "id": 3,
+      "seller": "Wind Energy Solutions",
+      "location": "Texas",
+      "price": "750000000000000000",   // 0.75 ETH in Wei
+      "amount": 75,
+      "timestamp": "2024-03-20T12:00:00Z"
+    }
+  ]
+} 
