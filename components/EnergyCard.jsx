@@ -5,7 +5,7 @@ const EnergyCard = ({ listing }) => {
         <div>
           <div className="space-y-2">
             <p className="text-gray-600">
-              Location: {listing.state || 'National'}
+              Sales: {listing.sales?.toLocaleString()} MWH
             </p>
             <p className="text-gray-500 text-sm">
               Period: {listing.period}

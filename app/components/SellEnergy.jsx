@@ -1,7 +1,6 @@
 "use client";
 import { useState } from 'react';
 import { Card } from "@/components/ui/card";
-import Link from 'next/link';
 
 const SellEnergy = () => {
   const [quantity, setQuantity] = useState(50);
@@ -29,15 +28,7 @@ const SellEnergy = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">Sell Energy</h1>
-        <Link 
-          href="/profile" 
-          className="px-4 py-2 bg-[#0f172a] text-white rounded-md hover:bg-[#1e293b] transition-colors"
-        >
-          Back to Profile
-        </Link>
-      </div>
+      <h1 className="text-2xl font-bold mb-8">Sell Energy</h1>
 
       {/* Create New Listing */}
       <Card className="bg-white p-6 mb-8">

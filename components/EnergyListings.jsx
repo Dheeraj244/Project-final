@@ -14,7 +14,7 @@ export default function EnergyListings() {
         const API_KEY = process.env.NEXT_PUBLIC_EIA_API_KEY;
         
         const response = await fetch(
-          `https://api.eia.gov/v2/electricity/retail-sales/data/?api_key=${API_KEY}&frequency=monthly&data[0]=price&sort[0][column]=period&sort[0][direction]=desc`,
+          `https://api.eia.gov/v2/electricity/retail-sales/data/?api_key=${API_KEY}&frequency=monthly&data[0]=price&data[1]=sales&sort[0][column]=period&sort[0][direction]=desc`,
           {
             method: 'GET',
             headers: {
@@ -29,17 +29,16 @@ export default function EnergyListings() {
 
         const data = await response.json();
         
-        // Transform the data to include only price, location, and period
-        const transformedListings = data.response.data.slice(0, 6).map(item => ({
-          price: Number(item.price).toFixed(2),
-          state: item.state || 'National',
+        // Use the raw data directly
+        const rawListings = data.response.data.slice(0, 6).map(item => ({
+          ...item,
           period: new Date(item.period).toLocaleDateString('en-US', { 
             month: 'short',
             year: 'numeric'
           })
         }));
 
-        setListings(transformedListings);
+        setListings(rawListings);
       } catch (err) {
         console.error('Error:', err);
         setError('Unable to load energy listings');
@@ -67,7 +66,7 @@ export default function EnergyListings() {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-6">Energy Prices</h1>
+      <h1 className="text-2xl font-bold mb-6">Energy Sales Data</h1>
       <div className="space-y-4">
         {listings.map((listing, index) => (
           <EnergyCard key={index} listing={listing} />
