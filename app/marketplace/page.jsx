@@ -191,20 +191,17 @@ export default function Marketplace() {
 
   // Function to handle search and sort
   const handleSearchAndSort = (newSearchTerm = searchTerm, newSortOrder = sortOrder) => {
-    // First, filter by search term
     let result = [...listings];
     if (newSearchTerm) {
       const searchLower = newSearchTerm.toLowerCase();
       result = result.filter(listing => 
         listing.location.toLowerCase().includes(searchLower) ||
-        listing.stateCode.toLowerCase().includes(searchLower)
+        (listing.energyType && listing.energyType.toLowerCase().includes(searchLower))
       );
     } else {
-      // If no search term, show only first 6 listings
       result = result.slice(0, 6);
     }
 
-    // Then, sort the filtered results
     if (newSortOrder) {
       result.sort((a, b) => {
         const priceA = parseFloat(a.price);
@@ -212,7 +209,6 @@ export default function Marketplace() {
         return newSortOrder === 'low' ? priceA - priceB : priceB - priceA;
       });
     } else {
-      // Default sort by state name if no price sort is selected
       result.sort((a, b) => a.location.localeCompare(b.location));
     }
 
@@ -231,13 +227,17 @@ export default function Marketplace() {
     handleSearchAndSort(searchTerm, order);
   };
 
-  // Modify fetchListings to initialize filteredListings
+  // Modify fetchListings to include user listings
   const fetchListings = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Log the API key (first few characters) to verify it's available
+      // Get user listings from localStorage
+      const savedListings = localStorage.getItem('energyListings');
+      const userListings = savedListings ? JSON.parse(savedListings) : [];
+
+      // Get API listings
       const apiKey = process.env.NEXT_PUBLIC_EIA_API_KEY;
       if (!apiKey) {
         throw new Error('API key is not configured. Please check your .env.local file.');
@@ -274,9 +274,9 @@ export default function Marketplace() {
         }
       });
 
-      const allListings = Array.from(stateMap.values())
+      const apiListings = Array.from(stateMap.values())
         .map((item, index) => ({
-          id: index.toString(),
+          id: `api-${index}`,
           tradeId: index,
           price: parseFloat(item.price).toFixed(2),
           energyAmount: Math.round(item.sales || 1000),
@@ -286,17 +286,15 @@ export default function Marketplace() {
             month: 'short',
             year: 'numeric'
           }),
-          producer: 'EIA Data'
+          producer: 'EIA Data',
+          energyType: 'grid' // Default type for API listings
         }));
 
-      if (allListings.length === 0) {
-        throw new Error('No valid energy listings found');
-      }
-
-      // Sort all listings by state name
+      // Combine and sort all listings
+      const allListings = [...userListings, ...apiListings];
       allListings.sort((a, b) => a.location.localeCompare(b.location));
 
-      // Store all listings but only show first 6 initially
+      // Store all listings
       setListings(allListings);
       setFilteredListings(allListings.slice(0, 6));
       setError(null);
@@ -360,16 +358,13 @@ export default function Marketplace() {
         throw new Error('Smart contract not initialized');
       }
 
-      // Calculate price in Wei
-      const priceInEth = (parseFloat(listing.price) * parseFloat(listing.energyAmount)).toString();
-      const priceInWei = web3.utils.toWei(priceInEth, 'ether');
+      // Convert price to Wei (use actual listing price)
+      const priceInWei = web3.utils.toWei(listing.price.toString(), 'ether');
 
-      console.log('Transaction details:', {
-        listingId: listing.tradeId,
-        price: listing.price,
-        energyAmount: listing.energyAmount,
-        priceInEth,
-        priceInWei
+      console.log('Preparing transaction:', {
+        from: walletAddress,
+        value: priceInWei,
+        listingId: listing.tradeId
       });
 
       // Add pending transaction
@@ -381,21 +376,30 @@ export default function Marketplace() {
         location: listing.location,
         status: 'pending',
         timestamp: new Date().toLocaleString(),
+        from: walletAddress
       };
       setTransactions(prev => [pendingTx, ...prev]);
 
       try {
-        // Create the transaction parameters
-        const txParams = {
-          from: walletAddress,
-          value: priceInWei,
-          gas: 300000 // Fixed gas limit
-        };
-
-        console.log('Sending transaction with parameters:', txParams);
+        // Get the current gas price
+        const gasPrice = await web3.eth.getGasPrice();
         
-        // Send the transaction
-        const transaction = await contract.methods.buyEnergy(listing.tradeId).send(txParams);
+        // Estimate gas for the transaction
+        const gasEstimate = await contract.methods.buyEnergy(listing.tradeId)
+          .estimateGas({
+            from: walletAddress,
+            value: priceInWei
+          })
+          .catch(() => 300000); // Fallback gas limit if estimation fails
+
+        // Send transaction with estimated gas
+        const transaction = await contract.methods.buyEnergy(listing.tradeId)
+          .send({
+            from: walletAddress,
+            value: priceInWei,
+            gasPrice: gasPrice,
+            gas: Math.min(gasEstimate * 1.2, 500000) // Add 20% buffer, cap at 500k
+          });
 
         console.log('Transaction successful:', transaction);
 
@@ -415,38 +419,29 @@ export default function Marketplace() {
 
       } catch (txError) {
         console.error('Transaction error:', txError);
-        throw txError;
+        
+        // Update transaction status to failed
+        setTransactions(prev => prev.map(tx => 
+          tx.id === pendingTx.id 
+            ? {
+                ...tx,
+                status: 'failed',
+                error: txError.message
+              }
+            : tx
+        ));
+
+        // Show error message
+        if (txError.code === 4001) {
+          alert('Transaction was rejected by user.');
+        } else {
+          alert('Transaction failed: ' + txError.message);
+        }
       }
 
     } catch (error) {
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        data: error.data
-      });
-
-      // Update transaction status
-      setTransactions(prev => prev.map(tx => 
-        tx.status === 'pending'
-          ? {
-              ...tx,
-              status: 'failed',
-              error: error.message
-            }
-          : tx
-      ));
-
-      // Show specific error message
-      let errorMessage = 'Transaction failed: ';
-      if (error.code === 4001) {
-        errorMessage = 'You rejected the transaction.';
-      } else if (error.message.includes('insufficient funds')) {
-        errorMessage = 'Insufficient funds to complete the purchase.';
-      } else {
-        errorMessage += error.message;
-      }
-      
-      alert(errorMessage);
+      console.error('Error in handleBuyEnergy:', error);
+      alert('Failed to process transaction: ' + error.message);
     }
   };
 
@@ -560,8 +555,8 @@ export default function Marketplace() {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Energy Prices</h1>
-            <p className="text-gray-600 mt-2">View current energy prices by location</p>
+            <h1 className="text-3xl font-bold text-gray-900">Energy Marketplace</h1>
+            <p className="text-gray-600 mt-2">Browse and purchase renewable energy</p>
           </div>
           <div className="flex items-center gap-4">
             <button
@@ -614,7 +609,7 @@ export default function Marketplace() {
           <div className="flex gap-4">
             <input
               type="text"
-              placeholder="Search by location..."
+              placeholder="Search by location or energy type..."
               className="flex-1 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => handleSearch(e.target.value)}
@@ -637,41 +632,37 @@ export default function Marketplace() {
             filteredListings.map((listing) => (
             <Card key={listing.id} className="bg-white overflow-hidden hover:shadow-lg transition-shadow">
               <div className="p-6">
-                  {/* Location and Period */}
-                  <div className="space-y-3 mb-4">
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                <div className="flex justify-between items-start mb-4">
                   <div>
-                    <p className="text-sm text-gray-600">Location</p>
-                    <p className="font-medium">{listing.location}</p>
+                        <h3 className="text-xl font-semibold text-gray-900">{listing.location}</h3>
+                        <p className="text-sm text-gray-600">Producer: {listing.producer}</p>
+                        <p className="text-sm text-gray-600">Energy Type: {listing.energyType || 'Not specified'}</p>
+                        <p className="text-sm text-gray-600">Period: {listing.period}</p>
                   </div>
-                  <div>
-                      <p className="text-sm text-gray-600">Period</p>
-                      <p className="font-medium">{listing.period}</p>
-                  </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-green-600">${listing.price}</p>
+                        <p className="text-sm text-gray-500">per kWh</p>
+                        <p className="text-sm text-gray-600 mt-2">{listing.energyAmount.toLocaleString()} MWH</p>
                 </div>
-
-                  {/* Price and Buy Button */}
-                <div className="mt-6">
-                    <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-gray-600">Price per kWH</p>
-                      <p className="text-2xl font-bold">${listing.price}</p>
-                    </div>
-                    <button
+                  </div>
+                    <div className="mt-4">
+                      <button
                         onClick={() => handleBuyEnergy(listing)}
                         disabled={!walletAddress}
-                        className="px-6 py-2 bg-[#0f172a] text-white rounded-lg hover:bg-[#1e293b] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Buy
-                    </button>
-                    </div>
+                        className="w-full px-6 py-2 bg-[#0f172a] text-white rounded-lg hover:bg-[#1e293b] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Buy Energy
+                      </button>
+                  </div>
                   </div>
                 </div>
               </Card>
             ))
           ) : (
-            <div className="text-center text-gray-500">No listings found.</div>
+            <div className="col-span-3 text-center text-gray-500">No listings found.</div>
           )}
-        </div>
+                </div>
 
         {/* Transaction History */}
         {transactions.length > 0 && (
@@ -694,7 +685,7 @@ export default function Marketplace() {
               <div className="divide-y divide-gray-200">
                 {transactions.map((tx) => (
                   <div key={tx.id} className="p-4 hover:bg-gray-50">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-gray-900">
                           {tx.amount} kWh from {tx.location}
@@ -706,7 +697,7 @@ export default function Marketplace() {
                           {tx.timestamp}
                         </p>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-end gap-2">
                         <span className={`px-3 py-1 rounded-full text-sm ${
                           tx.status === 'success' 
                             ? 'bg-green-100 text-green-800'
@@ -729,13 +720,18 @@ export default function Marketplace() {
                       </div>
                     </div>
                     {tx.error && (
-                      <p className="mt-2 text-sm text-red-600">{tx.error}</p>
+                      <div className="mt-3 p-3 bg-red-50 rounded-md">
+                        <p className="text-sm font-medium text-red-800">Error Details:</p>
+                        <pre className="mt-1 text-sm text-red-600 whitespace-pre-wrap break-words font-mono">
+                          {tx.error}
+                        </pre>
+                      </div>
                     )}
                   </div>
                 ))}
               </div>
             )}
-        </div>
+          </div>
         )}
       </div>
     </div>

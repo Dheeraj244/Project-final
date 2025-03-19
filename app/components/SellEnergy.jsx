@@ -1,29 +1,71 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from "@/components/ui/card";
 
 const SellEnergy = () => {
   const [quantity, setQuantity] = useState(50);
   const [price, setPrice] = useState(0.12);
+  const [energyType, setEnergyType] = useState('solar');
+  const [location, setLocation] = useState('');
   const [myListings, setMyListings] = useState([]);
+
+  // Energy types for dropdown
+  const energyTypes = [
+    { value: 'solar', label: 'Solar Energy' },
+    { value: 'wind', label: 'Wind Energy' },
+    { value: 'hydro', label: 'Hydroelectric' },
+    { value: 'biomass', label: 'Biomass' },
+    { value: 'geothermal', label: 'Geothermal' }
+  ];
+
+  // Load listings from localStorage on component mount
+  useEffect(() => {
+    const savedListings = localStorage.getItem('energyListings');
+    if (savedListings) {
+      setMyListings(JSON.parse(savedListings));
+    }
+  }, []);
 
   const handleCreateListing = (e) => {
     e.preventDefault();
+    
+    if (!location.trim()) {
+      alert('Please enter a location');
+      return;
+    }
+
     const newListing = {
-      id: myListings.length + 1,
+      id: Date.now().toString(), // Unique ID using timestamp
+      tradeId: Date.now(), // For compatibility with marketplace
       quantity: quantity,
+      energyAmount: quantity, // For compatibility with marketplace
       price: price.toFixed(2),
+      energyType: energyType,
+      location: location,
       status: "Active",
-      created: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+      period: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      created: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      producer: 'User Listing' // To identify user-created listings
     };
-    setMyListings([newListing, ...myListings]);
+
+    const updatedListings = [newListing, ...myListings];
+    setMyListings(updatedListings);
+    
+    // Save to localStorage
+    localStorage.setItem('energyListings', JSON.stringify(updatedListings));
+    
     // Reset form
     setQuantity(50);
     setPrice(0.12);
+    setEnergyType('solar');
+    setLocation('');
   };
 
   const handleRemoveListing = (id) => {
-    setMyListings(myListings.filter(listing => listing.id !== id));
+    const updatedListings = myListings.filter(listing => listing.id !== id);
+    setMyListings(updatedListings);
+    // Update localStorage
+    localStorage.setItem('energyListings', JSON.stringify(updatedListings));
   };
 
   return (
@@ -34,6 +76,39 @@ const SellEnergy = () => {
       <Card className="bg-white p-6 mb-8">
         <h2 className="text-xl font-semibold mb-6">Create New Listing</h2>
         <form onSubmit={handleCreateListing} className="space-y-6">
+          {/* Energy Type Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Energy Type
+            </label>
+            <select
+              value={energyType}
+              onChange={(e) => setEnergyType(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md bg-white"
+            >
+              {energyTypes.map(type => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Location Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Location
+            </label>
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Enter your location"
+              className="w-full p-2 border border-gray-300 rounded-md"
+              required
+            />
+          </div>
+
           {/* Quantity Slider */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -41,14 +116,14 @@ const SellEnergy = () => {
             </label>
             <input
               type="range"
-              min="10"
+              min="0"
               max="1000"
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
             />
             <div className="flex justify-between text-sm text-gray-600 mt-1">
-              <span>10 MWH</span>
+              <span>0 MWH</span>
               <span>1000 MWH</span>
             </div>
           </div>
@@ -85,15 +160,19 @@ const SellEnergy = () => {
           {myListings.map((listing) => (
             <Card key={listing.id} className="bg-white p-6">
               <div className="flex justify-between items-start">
-                <div>
-                  <div className="space-y-2">
-                    <p className="text-gray-600">
-                      Quantity: {listing.quantity.toLocaleString()} MWH
-                    </p>
-                    <p className="text-gray-600">
-                      Created: {listing.created}
-                    </p>
-                  </div>
+                <div className="space-y-2">
+                  <p className="text-gray-600">
+                    Energy Type: {energyTypes.find(t => t.value === listing.energyType)?.label}
+                  </p>
+                  <p className="text-gray-600">
+                    Location: {listing.location}
+                  </p>
+                  <p className="text-gray-600">
+                    Quantity: {listing.quantity.toLocaleString()} MWH
+                  </p>
+                  <p className="text-gray-600">
+                    Created: {listing.created}
+                  </p>
                 </div>
                 <div className="text-right space-y-3">
                   <p className="text-xl font-bold">
